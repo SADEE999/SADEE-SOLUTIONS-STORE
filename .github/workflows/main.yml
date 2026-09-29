@@ -1,0 +1,258 @@
+name: SADEE SOLUTIONS STORE - ZIP Extract & Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "sadee-store-deploy"
+  cancel-in-progress: false
+
+jobs:
+  extract:
+    name: Extract ZIP
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find uploaded ZIP
+        id: find_zip
+        shell: bash
+        run: |
+          set -e
+
+          echo "Searching for ZIP file..."
+
+          mapfile -t ZIPS < <(
+            find . -maxdepth 1 -type f \
+              -iname "*.zip" \
+              -print
+          )
+
+          if [ "${#ZIPS[@]}" -eq 0 ]; then
+            echo "❌ No ZIP file found in repository root."
+            echo ""
+            echo "Upload your SADEE_SOLUTIONS_STORE_UPDATED.zip"
+            echo "to the repository root and run the workflow again."
+            exit 1
+          fi
+
+          if [ "${#ZIPS[@]}" -gt 1 ]; then
+            echo "❌ More than one ZIP file found:"
+            printf '%s\n' "${ZIPS[@]}"
+            echo ""
+            echo "Keep only ONE store ZIP in the repository root."
+            exit 1
+          fi
+
+          ZIP_FILE="${ZIPS[0]}"
+
+          echo "✅ ZIP found:"
+          echo "$ZIP_FILE"
+
+          echo "zip_file=$ZIP_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Extract ZIP
+        shell: bash
+        run: |
+          set -e
+
+          ZIP_FILE="${{ steps.find_zip.outputs.zip_file }}"
+
+          rm -rf _store_extract
+          mkdir -p _store_extract
+
+          echo "Extracting:"
+          echo "$ZIP_FILE"
+
+          unzip -o "$ZIP_FILE" -d _store_extract
+
+          echo ""
+          echo "✅ ZIP extraction completed."
+
+          echo ""
+          echo "Extracted files:"
+          find _store_extract -maxdepth 4 -type f | sort
+
+      - name: Find website root
+        id: find_root
+        shell: bash
+        run: |
+          set -e
+
+          if [ -f "_store_extract/index.html" ]; then
+            WEBSITE_ROOT="_store_extract"
+          else
+            WEBSITE_ROOT="$(
+              find _store_extract \
+                -type f \
+                -name "index.html" \
+                -printf '%h\n' \
+                | head -n 1
+            )"
+          fi
+
+          if [ -z "$WEBSITE_ROOT" ] || [ ! -f "$WEBSITE_ROOT/index.html" ]; then
+            echo "❌ index.html was not found inside the ZIP."
+            exit 1
+          fi
+
+          echo "✅ Website root:"
+          echo "$WEBSITE_ROOT"
+
+          echo "website_root=$WEBSITE_ROOT" >> "$GITHUB_OUTPUT"
+
+      - name: Backup GitHub workflow
+        shell: bash
+        run: |
+          set -e
+
+          mkdir -p /tmp/github-workflow
+
+          if [ -d ".github" ]; then
+            cp -a .github /tmp/github-workflow/
+          fi
+
+      - name: Replace old website files
+        shell: bash
+        run: |
+          set -e
+
+          WEBSITE_ROOT="${{ steps.find_root.outputs.website_root }}"
+
+          echo "Cleaning old website files..."
+
+          # Remove previous website content.
+          # GitHub workflow is backed up separately.
+          find . -mindepth 1 -maxdepth 1 \
+            ! -name ".git" \
+            ! -name ".github" \
+            ! -name "_store_extract" \
+            -exec rm -rf {} +
+
+          echo "Copying new website..."
+
+          cp -a "$WEBSITE_ROOT"/. .
+
+          echo "Restoring GitHub workflow..."
+
+          rm -rf .github
+
+          if [ -d "/tmp/github-workflow/.github" ]; then
+            cp -a /tmp/github-workflow/.github .
+          fi
+
+          echo ""
+          echo "✅ New website copied."
+
+      - name: Remove temporary files
+        shell: bash
+        run: |
+          rm -rf _store_extract
+          rm -f ./*.zip
+
+          echo "✅ Temporary ZIP/extraction files removed."
+
+      - name: Verify website
+        shell: bash
+        run: |
+          set -e
+
+          echo "=============================="
+          echo "SADEE SOLUTIONS STORE CHECK"
+          echo "=============================="
+
+          test -f index.html
+
+          echo "✅ index.html"
+
+          if [ -f styles.css ]; then
+            echo "✅ styles.css"
+          fi
+
+          if [ -f app.js ]; then
+            echo "✅ app.js"
+          fi
+
+          if [ -f config.js ]; then
+            echo "✅ config.js"
+          fi
+
+          if [ -d admin ]; then
+            echo "✅ admin/"
+          fi
+
+          if [ -d assets ]; then
+            echo "✅ assets/"
+          fi
+
+          echo ""
+          echo "Website files:"
+          find . -maxdepth 3 -type f \
+            ! -path "./.git/*" \
+            | sort
+
+          echo ""
+          echo "✅ WEBSITE CHECK PASSED"
+
+      - name: Commit extracted website
+        shell: bash
+        run: |
+          set -e
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "ℹ️ Nothing changed."
+            exit 0
+          fi
+
+          git commit -m "Update SADEE SOLUTIONS STORE [skip ci]"
+
+          git push
+
+          echo "✅ Website files pushed to main."
+
+  deploy:
+    name: Deploy GitHub Pages
+    needs: extract
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout updated repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload website
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - name: Deploy website
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Show website URL
+        run: |
+          echo "=========================================="
+          echo "✅ SADEE SOLUTIONS STORE IS LIVE"
+          echo "=========================================="
+          echo "https://sadee999.github.io/SADEE_SOLUTIONS_STORE/"
