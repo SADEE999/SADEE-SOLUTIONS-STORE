@@ -1,4 +1,4 @@
-name: SADEE SOLUTIONS - Extract ZIP
+name: SADEE SOLUTIONS STORE
 
 on:
   workflow_dispatch:
@@ -10,132 +10,38 @@ permissions:
   contents: write
 
 jobs:
-  extract-zip:
-    name: Extract Uploaded ZIP
+  check:
+    name: Check Website
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Find ZIP
-        id: zip
+      - name: Check website files
         run: |
           set -e
 
-          ZIP_FILE=$(find . -maxdepth 1 -type f -iname "*.zip" | head -n 1)
-
-          if [ -z "$ZIP_FILE" ]; then
-            echo "❌ No ZIP file found in repository root."
-            echo "Upload the new ZIP first, then run this workflow."
-            exit 1
-          fi
-
-          echo "✅ ZIP found: $ZIP_FILE"
-          echo "zip_file=$ZIP_FILE" >> "$GITHUB_OUTPUT"
-
-      - name: Extract ZIP
-        run: |
-          set -e
-
-          ZIP_FILE="${{ steps.zip.outputs.zip_file }}"
-
-          rm -rf extracted
-          mkdir -p extracted
-
-          echo "📦 Extracting ZIP..."
-          unzip -o "$ZIP_FILE" -d extracted
-
-          echo "✅ ZIP extracted successfully."
-
-      - name: Find website folder
-        id: website
-        run: |
-          set -e
-
-          if [ -f "extracted/index.html" ]; then
-            FOLDER="extracted"
-          else
-            FOLDER=$(find extracted -type f -name "index.html" -printf '%h\n' | head -n 1)
-          fi
-
-          if [ -z "$FOLDER" ]; then
-            echo "❌ index.html not found inside ZIP."
-            exit 1
-          fi
-
-          echo "✅ Website folder: $FOLDER"
-          echo "folder=$FOLDER" >> "$GITHUB_OUTPUT"
-
-      - name: Copy extracted website
-        run: |
-          set -e
-
-          FOLDER="${{ steps.website.outputs.folder }}"
-
-          echo "📂 Copying website files..."
-
-          cp -a "$FOLDER"/. .
-
-          echo "✅ Website copied to repository root."
-
-      - name: Remove temporary extraction folder
-        run: |
-          rm -rf extracted
-
-          echo "✅ Temporary folder removed."
-
-      - name: Remove ZIP
-        run: |
-          rm -f ./*.zip
-
-          echo "✅ Uploaded ZIP removed."
-
-      - name: Show final files
-        run: |
-          echo ""
           echo "=============================="
           echo "SADEE SOLUTIONS STORE"
           echo "=============================="
 
-          if [ -f index.html ]; then
-            echo "✅ index.html"
-          else
-            echo "❌ index.html"
-            exit 1
-          fi
+          test -f index.html
+          echo "✅ index.html"
 
-          [ -f styles.css ] && echo "✅ styles.css"
-          [ -f app.js ] && echo "✅ app.js"
-          [ -f config.js ] && echo "✅ config.js"
-          [ -d admin ] && echo "✅ admin/"
-          [ -d assets ] && echo "✅ assets/"
+          test -f config.js
+          echo "✅ config.js"
 
-          echo ""
-          find . -maxdepth 3 -type f \
-            ! -path "./.git/*" \
-            | sort
+          test -f app.js
+          echo "✅ app.js"
 
-      - name: Commit extracted files
-        run: |
-          set -e
+          test -d admin
+          echo "✅ admin/"
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add -A
-
-          if git diff --cached --quiet; then
-            echo "ℹ️ No changes to commit."
-          else
-            git commit -m "Extract SADEE SOLUTIONS STORE ZIP"
-            git push
-            echo "✅ Extracted files pushed to main."
-          fi
+          test -d assets
+          echo "✅ assets/"
 
           echo ""
-          echo "================================"
-          echo "✅ EXTRACTION COMPLETE"
-          echo "================================"
+          echo "=============================="
+          echo "✅ WEBSITE FILES READY"
+          echo "=============================="
